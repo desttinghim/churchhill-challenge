@@ -36,10 +36,6 @@ export fn create(points_begin: [*]const Point, points_end: *const Point) callcon
 
     sc.points = gpa.allocator.dupe(Point, points_begin[0..len]) catch |e| @panic("Out of memory!");
 
-    for (sc.points) |point| {
-        std.log.warn("point {}", .{point});
-    }
-
     return sc;
 }
 
@@ -55,7 +51,6 @@ fn point_is_inside(p: Point, rect: Rect) bool {
 }
 
 export fn search(sc: *SearchContext, rect: *const Rect, count: i32, out_points: [*]Point) callconv(.C) i32 {
-    std.log.debug("rect {}", .{rect});
     var pointlist = std.ArrayList(Point).init(&gpa.allocator);
     defer pointlist.deinit();
     for (sc.points) |point| {
@@ -66,11 +61,6 @@ export fn search(sc: *SearchContext, rect: *const Rect, count: i32, out_points: 
     std.sort.sort(Point, pointlist.items, @as(u0, 0), point_cmp);
     const mincount = std.math.min(@intCast(usize, count), pointlist.items.len);
     std.mem.copy(Point, out_points[0..mincount], pointlist.items[0..mincount]);
-    std.log.warn("count {}", .{count});
-    std.log.warn("mincount {}", .{mincount});
-    for (out_points[0..mincount]) |out_point| {
-        std.log.warn("out_point {}", .{out_point});
-    }
     return @intCast(i32, mincount);
 }
 
