@@ -69,11 +69,11 @@ pub const KDNode = struct {
     left: ?*@This(),
     right: ?*@This(),
 
-    fn deinit(self: *@This(), allocator: *std.mem.Allocator) void {
-        if (self.left) |left| left.deinit(allocator);
-        if (self.right) |right| right.deinit(allocator);
-        allocator.destroy(self);
-    }
+    // fn deinit(self: *@This(), allocator: *std.mem.Allocator) void {
+    //     if (self.left) |left| left.deinit(allocator);
+    //     if (self.right) |right| right.deinit(allocator);
+    //     allocator.destroy(self);
+    // }
 
     fn printAll(self: *@This(), depth: usize) void {
         self.print(depth);
@@ -122,15 +122,17 @@ const NNSRes = struct {
 
 pub const KDTree = struct {
     root: ?*KDNode,
-    allocator: *std.mem.Allocator,
+    nodelist: std.ArrayList(KDNode),
     area: Rect,
 
-    pub fn deinit(self: @This()) void {
+    pub fn deinit(self: *@This()) void {
         const t = tracy.trace(@src());
         defer t.end();
-        if (self.root) |root| {
-            root.deinit(self.allocator);
-        }
+        self.root = null;
+        self.nodelist.deinit();
+        // if (self.root) |root| {
+        //     root.deinit(self.allocator);
+        // }
     }
 
     pub fn print(self: *@This()) void {
@@ -148,7 +150,7 @@ pub const KDTree = struct {
         defer t.end();
         var self = @This(){
             .root = null,
-            .allocator = allocator,
+            .nodelist = try std.ArrayList(KDNode).initCapacity(allocator, datalist.len),
             .area = .{ .low = .{ .x = 0, .y = 0 }, .high = .{ .x = 0, .y = 0 } },
         };
         self.root = try self._kdtree(datalist, 0);
@@ -172,7 +174,7 @@ pub const KDTree = struct {
             self.area.high.y = std.math.max(mdat.pos.y, self.area.high.y);
         }
 
-        var node = try self.allocator.create(KDNode);
+        var node = self.nodelist.addOneAssumeCapacity();
         node.* = .{
             .pos = mdat.pos,
             .id = mdat.id,
