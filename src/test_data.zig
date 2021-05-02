@@ -1,7 +1,7 @@
 const Point = @import("main.zig").Point;
 const Rect = @import("main.zig").Rect;
 
-const Test = struct {
+pub const Test = struct {
     rect: Rect,
     count: usize,
     actual: usize,

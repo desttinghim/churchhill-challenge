@@ -1,4 +1,5 @@
 const std = @import("std");
+const tracy = @import("tracy");
 
 // A 2Dimensional k-d tree
 
@@ -17,7 +18,7 @@ pub const Rect = struct {
     low: Pos,
     high: Pos,
 
-    fn init(lx: f32, ly: f32, hx: f32, hy: f32) @This() {
+    pub fn init(lx: f32, ly: f32, hx: f32, hy: f32) @This() {
         const low = Pos{ .x = std.math.min(lx, hx), .y = std.math.min(ly, hy) };
         const high = Pos{ .x = std.math.max(lx, hx), .y = std.math.max(ly, hy) };
         return @This(){
@@ -31,9 +32,9 @@ pub const Rect = struct {
     }
 
     fn contains(self: Rect, pos: Pos) bool {
-        return pos.x >= self.low.x and
+        return pos.x > self.low.x and
             pos.x < self.high.x and
-            pos.y >= self.low.y and
+            pos.y > self.low.y and
             pos.y < self.high.y;
     }
 
@@ -88,7 +89,7 @@ pub const KDNode = struct {
             depthbuf[i * 2] = '-';
             depthbuf[i * 2 + 1] = '-';
         }
-        depthslice = depthbuf[0..i];
+        depthslice = depthbuf[0 .. i * 2];
         var leftbuf: [100]u8 = undefined;
         var leftslice: []u8 = undefined;
         var rightbuf: [100]u8 = undefined;
@@ -103,7 +104,7 @@ pub const KDNode = struct {
         } else {
             rightslice = std.fmt.bufPrint(&rightbuf, "None", .{}) catch unreachable;
         }
-        std.log.warn("|{s}id: {}, left: {s}, right: {s}, x: {d}, y: {d}", .{
+        std.log.warn("|{s: <20}id: {: >4}, left: {s: >5}, right: {s: >5}, x: {d: >8.2}, y: {d: >8.2}", .{
             depthslice,
             self.id,
             leftslice,
@@ -125,12 +126,16 @@ pub const KDTree = struct {
     area: Rect,
 
     pub fn deinit(self: @This()) void {
+        const t = tracy.trace(@src());
+        defer t.end();
         if (self.root) |root| {
             root.deinit(self.allocator);
         }
     }
 
     pub fn print(self: *@This()) void {
+        const t = tracy.trace(@src());
+        defer t.end();
         if (self.root) |root| {
             root.printAll(0);
         }
@@ -139,6 +144,8 @@ pub const KDTree = struct {
     /// Takes an allocator and a slice of KDData to make a k-d tree of. Returns
     /// a KDTree.
     pub fn kdtree(allocator: *std.mem.Allocator, datalist: []KDData) !@This() {
+        const t = tracy.trace(@src());
+        defer t.end();
         var self = @This(){
             .root = null,
             .allocator = allocator,
@@ -150,6 +157,8 @@ pub const KDTree = struct {
 
     // Recursive algorithm to build the k-d tree
     fn _kdtree(self: *@This(), datalist: []KDData, depth: usize) anyerror!?*KDNode {
+        const t = tracy.trace(@src());
+        defer t.end();
         if (datalist.len == 0) return null;
 
         const axis: Axis = if (depth % 2 == 0) .Horizontal else .Vertical;
@@ -178,6 +187,8 @@ pub const KDTree = struct {
     /// Does a nearest neighbor search on the kdtree. Returns the id of the
     /// node that is nearest to the given point, or null if the tree is empty.
     pub fn nns(self: *@This(), pos: Pos) !usize {
+        const t = tracy.trace(@src());
+        defer t.end();
         if (self.root) |root| {
             var nns_res = self._nns(self.root, pos, 0);
             if (nns_res) |res| {
@@ -193,6 +204,8 @@ pub const KDTree = struct {
 
     // Recursive algorithm to search the k-d tree
     fn _nns(self: *@This(), node: ?*KDNode, pos: Pos, depth: usize) ?NNSRes {
+        const t = tracy.trace(@src());
+        defer t.end();
         if (node == null) return null;
         const axis: Axis = if (depth % 2 == 0) .Horizontal else .Vertical;
         var best_node = node.?;
@@ -226,35 +239,53 @@ pub const KDTree = struct {
     }
 
     pub fn range(self: *@This(), matches: *std.ArrayList(usize), rect: Rect) anyerror!void {
+        const t = tracy.trace(@src());
+        defer t.end();
         if (!self.area.overlaps(rect)) {
             return;
         }
         if (self.root) |root| {
-            try self._query(matches, root, rect, self.area, 0);
+            // try self._query(matches, root, rect, self.area, 0);
+            try self._query(matches, root, rect, 0);
             return;
         }
         return error.EmptyTree;
     }
 
-    fn _query(self: *@This(), matches: *std.ArrayList(usize), inode: ?*KDNode, rect: Rect, area: Rect, depth: usize) anyerror!void {
+    // fn _query(self: *@This(), matches: *std.ArrayList(usize), inode: ?*KDNode, rect: Rect, area: Rect, depth: usize) anyerror!void {
+    fn _query(self: *@This(), matches: *std.ArrayList(usize), inode: ?*KDNode, rect: Rect, depth: usize) anyerror!void {
+        const t = tracy.trace(@src());
+        defer t.end();
         if (inode == null) return;
         const node = inode.?;
         if (rect.contains(node.pos)) {
+            const t2 = tracy.trace(@src());
+            defer t2.end();
             try matches.append(node.id);
         }
 
         const axis: Axis = if (depth % 2 == 0) .Horizontal else .Vertical;
-        const leftrect = switch (axis) {
-            .Horizontal => Rect.init(area.low.x, area.low.y, node.pos.x, area.high.y),
-            .Vertical => Rect.init(area.low.x, area.low.y, area.high.x, node.pos.y),
-        };
-        const rightrect = switch (axis) {
-            .Horizontal => Rect.init(node.pos.x, area.low.y, area.high.x, area.high.y),
-            .Vertical => Rect.init(area.low.x, node.pos.y, area.high.x, area.high.y),
-        };
+        switch (axis) {
+            .Horizontal => {
+                if (rect.low.x < node.pos.x) try self._query(matches, node.left, rect, depth + 1);
+                if (rect.high.x > node.pos.x) try self._query(matches, node.right, rect, depth + 1);
+            },
+            .Vertical => {
+                if (rect.low.y < node.pos.y) try self._query(matches, node.left, rect, depth + 1);
+                if (rect.high.y > node.pos.y) try self._query(matches, node.right, rect, depth + 1);
+            },
+        }
+        // const leftrect = switch (axis) {
+        //     .Horizontal => Rect.init(area.low.x, area.low.y, node.pos.x, area.high.y),
+        //     .Vertical => Rect.init(area.low.x, area.low.y, area.high.x, node.pos.y),
+        // };
+        // const rightrect = switch (axis) {
+        //     .Horizontal => Rect.init(node.pos.x, area.low.y, area.high.x, area.high.y),
+        //     .Vertical => Rect.init(area.low.x, node.pos.y, area.high.x, area.high.y),
+        // };
 
-        if (leftrect.overlaps(rect)) try self._query(matches, node.left, rect, leftrect, depth + 1);
-        if (rightrect.overlaps(rect)) try self._query(matches, node.right, rect, rightrect, depth + 1);
+        // if (leftrect.overlaps(rect)) try self._query(matches, node.left, rect, leftrect, depth + 1);
+        // if (rightrect.overlaps(rect)) try self._query(matches, node.right, rect, rightrect, depth + 1);
     }
 };
 
@@ -302,6 +333,8 @@ test "k-d tree nearest neighbor search" {
 }
 
 test "k-d tree range query" {
+    const t = tracy.trace(@src());
+    defer t.end();
     const test_points: [10]Pos = .{
         Pos{ .x = 10, .y = 10 },
         Pos{ .x = -11, .y = -11 },
