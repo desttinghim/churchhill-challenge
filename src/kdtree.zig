@@ -42,11 +42,49 @@ pub const KDNode = struct {
         allocator.destroy(self);
     }
 
-    fn print(self: *@This(), depth: usize) void {
-        std.log.warn("depth: {}, id: {}, pos: {}", .{ depth, self.id, self.pos });
-        if (self.left) |left| left.print(depth + 1);
-        if (self.right) |right| right.print(depth + 1);
+    fn printAll(self: *@This(), depth: usize) void {
+        self.print(depth);
+        if (self.left) |left| left.printAll(depth + 1);
+        if (self.right) |right| right.printAll(depth + 1);
     }
+
+    fn print(self: *@This(), depth: usize) void {
+        var depthbuf: [100]u8 = undefined;
+        var depthslice: []u8 = undefined;
+        var i: usize = 0;
+        while (i < depth) : (i += 1) {
+            depthbuf[i * 2] = '-';
+            depthbuf[i * 2 + 1] = '-';
+        }
+        depthslice = depthbuf[0..i];
+        var leftbuf: [100]u8 = undefined;
+        var leftslice: []u8 = undefined;
+        var rightbuf: [100]u8 = undefined;
+        var rightslice: []u8 = undefined;
+        if (self.left) |left| {
+            leftslice = std.fmt.bufPrint(&leftbuf, "{}", .{left.id}) catch unreachable;
+        } else {
+            leftslice = std.fmt.bufPrint(&leftbuf, "None", .{}) catch unreachable;
+        }
+        if (self.right) |right| {
+            rightslice = std.fmt.bufPrint(&rightbuf, "{}", .{right.id}) catch unreachable;
+        } else {
+            rightslice = std.fmt.bufPrint(&rightbuf, "None", .{}) catch unreachable;
+        }
+        std.log.warn("|{s}id: {}, left: {s}, right: {s}, x: {d}, y: {d}", .{
+            depthslice,
+            self.id,
+            leftslice,
+            rightslice,
+            self.pos.x,
+            self.pos.y,
+        });
+    }
+};
+
+const NNSRes = struct {
+    node: *KDNode,
+    dist: f32,
 };
 
 pub const KDTree = struct {
@@ -61,7 +99,7 @@ pub const KDTree = struct {
 
     pub fn print(self: *@This()) void {
         if (self.root) |root| {
-            root.print(0);
+            root.printAll(0);
         }
     }
 
@@ -95,132 +133,96 @@ pub const KDTree = struct {
         return node;
     }
 
-    // Does a nearest neighbor search on the kdtree. Returns the id of the
-    // node that is nearest to the given point.
-    // pub fn nns(self: *@This(), pos: Pos) usize {}
+    /// Does a nearest neighbor search on the kdtree. Returns the id of the
+    /// node that is nearest to the given point, or null if the tree is empty.
+    pub fn nns(self: *@This(), pos: Pos) !usize {
+        if (self.root) |root| {
+            var nns_res = self._nns(self.root, pos, 0);
+            if (nns_res) |res| {
+                return res.node.id;
+            } else {
+                // If there is anything in the tree, there should be a best
+                // result and make it impossible to reach this code.
+                unreachable;
+            }
+        }
+        return error.EmptyTree;
+    }
 
     // Recursive algorithm to search the k-d tree
-    // pub fn _nns() {}
+    fn _nns(self: *@This(), node: ?*KDNode, pos: Pos, depth: usize) ?NNSRes {
+        if (node == null) return null;
+        const axis: Axis = if (depth % 2 == 0) .Horizontal else .Vertical;
+        var best_node = node.?;
+        var best_dist = best_node.pos.dist_squared(pos);
+
+        var new: ?NNSRes = null;
+
+        if (axis == .Horizontal) {
+            new = if (pos.x < best_node.pos.x)
+                self._nns(best_node.left, pos, depth + 1)
+            else
+                self._nns(best_node.right, pos, depth + 1);
+        } else if (axis == .Vertical) {
+            new = if (pos.y < best_node.pos.y)
+                self._nns(best_node.left, pos, depth + 1)
+            else
+                self._nns(best_node.right, pos, depth + 1);
+        }
+
+        if (new) |n| {
+            if (n.dist < best_dist) {
+                best_dist = n.dist;
+                best_node = n.node;
+            }
+        }
+
+        return NNSRes{
+            .node = best_node,
+            .dist = best_dist,
+        };
+    }
 };
 
-// const KDNode = struct {
-//     point: Point,
-//     left: ?*@This(),
-//     right: ?*@This(),
-// };
+test "k-d tree functionality test" {
+    const test_points: [10]Pos = .{
+        Pos{ .x = 10, .y = 10 },
+        Pos{ .x = -11, .y = -11 },
+        Pos{ .x = 11, .y = -11 },
+        Pos{ .x = 40, .y = 10 },
+        Pos{ .x = 40, .y = -10 },
+        Pos{ .x = -40, .y = 10 },
+        Pos{ .x = -40, .y = -10 },
+        Pos{ .x = 70, .y = 0 },
+        Pos{ .x = -70, .y = -70 },
+        Pos{ .x = -70, .y = 70 },
+    };
 
-// fn kd_cmp(axis: usize, lhs: KDNode, rhs: KDNode) bool {
-//     return if (axis == 0) lhs.point.x < rhs.point.x else lhs.point.y < lhs.point.y;
-// }
+    var datalist: [10]KDData = undefined;
+    for (test_points) |tp, i| {
+        datalist[i] = .{ .pos = .{ .x = tp.x, .y = tp.y }, .id = i };
+    }
 
-// fn kdtree(point_list: []KDNode, depth: usize) ?*KDNode {
-//     if (point_list.len == 0) return null;
+    var tree = try KDTree.kdtree(std.testing.allocator, &datalist);
+    defer tree.deinit();
 
-//     const axis = depth % 2;
+    // tree.print();
 
-//     std.sort.sort(KDNode, point_list, axis, kd_cmp);
-//     const median = point_list.len / 2;
+    {
+        var id = try tree.nns(Pos{ .x = 0, .y = 0 });
+        var result = test_points[id];
+        std.testing.expectEqual(id, 0);
+    }
 
-//     point_list[median].left = kdtree(point_list[0..median], depth + 1);
-//     if (point_list[median + 1 ..].len >= 1) {
-//         point_list[median].right = kdtree(point_list[median + 1 ..], depth + 1);
-//     }
-//     return &point_list[median];
-// }
+    {
+        var id = try tree.nns(Pos{ .x = 90, .y = 0 });
+        var result = test_points[id];
+        std.testing.expectEqual(id, 7);
+    }
 
-// const NNSRes = struct { node: *KDNode, dist: f32 };
-
-// // TODO: Move into KDTree struct, use indices instead of pointers
-// fn nns(node: ?*KDNode, point: Point, depth: usize) ?NNSRes {
-//     if (node == null) return null;
-//     const axis = depth % 2;
-//     var best_node = node.?;
-//     var best_dist = dist_squared(point, best_node.point);
-
-//     var new: ?NNSRes = null;
-
-//     if (axis == 0) {
-//         new = if (point.x > best_node.point.x)
-//             nns(best_node.left, point, depth + 1)
-//         else
-//             nns(best_node.right, point, depth + 1);
-//     } else {
-//         new = if (point.y > best_node.point.y)
-//             nns(best_node.left, point, depth + 1)
-//         else
-//             nns(best_node.right, point, depth + 1);
-//     }
-
-//     if (new) |n| {
-//         if (n.dist < best_dist) {
-//             best_dist = n.dist;
-//             best_node = n.node;
-//         }
-//     }
-
-//     return NNSRes{
-//         .node = best_node,
-//         .dist = best_dist,
-//     };
-// }
-
-// const KDTree = struct {
-//     nodes: []KDNode,
-//     allocator: *std.mem.Allocator,
-//     root: *KDNode,
-
-//     fn init(allocator: *std.mem.Allocator, pointlist: []const Point) !@This() {
-//         var nodes = try allocator.alloc(KDNode, pointlist.len);
-
-//         for (pointlist) |point, i| {
-//             nodes[i].point = point;
-//             nodes[i].left = null;
-//             nodes[i].right = null;
-//         }
-
-//         // if (pointlist.len <= 1) return @This(){ .nodes = nodes, .allocator = allocator, .root = .nodes[0] };
-
-//         std.sort.sort(KDNode, nodes, @as(usize, 0), kd_cmp);
-//         const median = nodes.len / 2;
-//         nodes[median].left = kdtree(nodes[0..median], 1);
-//         nodes[median].right = kdtree(nodes[median + 1 ..], 1);
-
-//         return @This(){
-//             .nodes = nodes,
-//             .allocator = allocator,
-//             .root = &nodes[median],
-//         };
-//     }
-
-//     fn print(self: *@This()) void {
-//         const ptr = @ptrToInt(self.nodes.ptr) - 1;
-//         std.log.warn("\n{}", .{ptr});
-//         for (self.nodes) |node, i| {
-//             const left_ptr = @ptrToInt(node.left);
-//             const left_i = if (node.left != null)
-//                 ((left_ptr - ptr) / @sizeOf(KDNode)) + 1
-//             else
-//                 0;
-
-//             const right_ptr = @ptrToInt(node.right);
-//             const right_i = if (node.right != null)
-//                 ((right_ptr - ptr) / @sizeOf(KDNode)) + 1
-//             else
-//                 0;
-//             std.log.warn("{}: point {}, left {}, right {}", .{ i + 1, node.point, left_i, right_i });
-//         }
-//     }
-
-//     fn nearest_neighbor(self: *@This(), point: Point) Point {
-//         self.print();
-//         if (nns(self.root, point, 0)) |res| {
-//             return res.node.point;
-//         } else {
-//             return self.root.point;
-//         }
-//     }
-
-//     fn deinit(self: @This()) void {
-//         self.allocator.free(self.nodes);
-//     }
-// };
+    {
+        var id = try tree.nns(Pos{ .x = 25, .y = -25 });
+        var result = test_points[id];
+        std.testing.expectEqual(id, 2);
+    }
+}

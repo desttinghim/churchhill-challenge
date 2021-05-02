@@ -96,31 +96,6 @@ test "Algorithm regression test" {
     std.testing.expectEqual(@as(?*SearchContext, null), res);
 }
 
-test "k-d tree functionality test" {
-    const test_points: [10]Point = .{
-        Point{ .id = 0, .rank = 0, .x = 10, .y = 10 },
-        Point{ .id = 0, .rank = 0, .x = -11, .y = -11 },
-        Point{ .id = 0, .rank = 0, .x = 11, .y = -11 },
-        Point{ .id = 0, .rank = 0, .x = 40, .y = 10 },
-        Point{ .id = 0, .rank = 0, .x = 40, .y = -10 },
-        Point{ .id = 0, .rank = 0, .x = -40, .y = 10 },
-        Point{ .id = 0, .rank = 0, .x = -40, .y = -10 },
-        Point{ .id = 0, .rank = 0, .x = 70, .y = 0 },
-        Point{ .id = 0, .rank = 0, .x = -70, .y = -70 },
-        Point{ .id = 0, .rank = 0, .x = -70, .y = 70 },
-    };
-
-    var datalist: [10]kd.KDData = undefined;
-    for (test_points) |tp, i| {
-        datalist[i] = .{ .pos = .{ .x = tp.x, .y = tp.y }, .id = i };
-    }
-
-    var tree = try kd.KDTree.kdtree(std.testing.allocator, &datalist);
-    defer tree.deinit();
-
-    tree.print();
-
-    // std.testing.expectEqual(test_points[0], tree.nearest_neighbor(Point{ .x = 0, .y = 0, .rank = 0, .id = 0 }));
-    // const nn = tree.nearest_neighbor(Point{ .x = 90, .y = 0, .rank = 0, .id = 0 });
-    // std.log.warn("{}", .{nn});
+comptime {
+    _ = @import("kdtree.zig");
 }
