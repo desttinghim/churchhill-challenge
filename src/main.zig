@@ -1,5 +1,6 @@
 const std = @import("std");
 const testing = std.testing;
+const kd = @import("kdtree.zig");
 
 pub const Point = packed struct {
     id: i8,
@@ -20,134 +21,6 @@ pub const Rect = packed struct {
 
     fn print(self: @This()) void {
         std.log.warn("lx: {d}, ly: {d}, hx: {d}, hy: {d}", .{ self.lx, self.ly, self.hx, self.hy });
-    }
-};
-
-const KDNode = struct {
-    point: Point,
-    left: ?*@This(),
-    right: ?*@This(),
-};
-
-fn kd_cmp(axis: usize, lhs: KDNode, rhs: KDNode) bool {
-    return if (axis == 0) lhs.point.x < rhs.point.x else lhs.point.y < lhs.point.y;
-}
-
-fn kdtree(point_list: []KDNode, depth: usize) ?*KDNode {
-    if (point_list.len == 0) return null;
-
-    const axis = depth % 2;
-
-    std.sort.sort(KDNode, point_list, axis, kd_cmp);
-    const median = point_list.len / 2;
-
-    point_list[median].left = kdtree(point_list[0..median], depth + 1);
-    if (point_list[median + 1 ..].len >= 1) {
-        point_list[median].right = kdtree(point_list[median + 1 ..], depth + 1);
-    }
-    return &point_list[median];
-}
-
-fn dist_squared(p1: Point, p2: Point) f32 {
-    const a = p2.x - p1.x;
-    const b = p2.y - p1.y;
-    return a * a + b * b;
-}
-
-const NNSRes = struct { node: *KDNode, dist: f32 };
-
-// TODO: Move into KDTree struct, use indices instead of pointers
-fn nns(node: ?*KDNode, point: Point, depth: usize) ?NNSRes {
-    if (node == null) return null;
-    const axis = depth % 2;
-    var best_node = node.?;
-    var best_dist = dist_squared(point, best_node.point);
-
-    var new: ?NNSRes = null;
-
-    if (axis == 0) {
-        new = if (point.x > best_node.point.x)
-            nns(best_node.left, point, depth + 1)
-        else
-            nns(best_node.right, point, depth + 1);
-    } else {
-        new = if (point.y > best_node.point.y)
-            nns(best_node.left, point, depth + 1)
-        else
-            nns(best_node.right, point, depth + 1);
-    }
-
-    if (new) |n| {
-        if (n.dist < best_dist) {
-            best_dist = n.dist;
-            best_node = n.node;
-        }
-    }
-
-    return NNSRes{
-        .node = best_node,
-        .dist = best_dist,
-    };
-}
-
-const KDTree = struct {
-    nodes: []KDNode,
-    allocator: *std.mem.Allocator,
-    root: *KDNode,
-
-    fn init(allocator: *std.mem.Allocator, pointlist: []const Point) !@This() {
-        var nodes = try allocator.alloc(KDNode, pointlist.len);
-
-        for (pointlist) |point, i| {
-            nodes[i].point = point;
-            nodes[i].left = null;
-            nodes[i].right = null;
-        }
-
-        // if (pointlist.len <= 1) return @This(){ .nodes = nodes, .allocator = allocator, .root = .nodes[0] };
-
-        std.sort.sort(KDNode, nodes, @as(usize, 0), kd_cmp);
-        const median = nodes.len / 2;
-        nodes[median].left = kdtree(nodes[0..median], 1);
-        nodes[median].right = kdtree(nodes[median + 1 ..], 1);
-
-        return @This(){
-            .nodes = nodes,
-            .allocator = allocator,
-            .root = &nodes[median],
-        };
-    }
-
-    fn print(self: *@This()) void {
-        const ptr = @ptrToInt(self.nodes.ptr) - 1;
-        std.log.warn("\n{}", .{ptr});
-        for (self.nodes) |node, i| {
-            const left_ptr = @ptrToInt(node.left);
-            const left_i = if (node.left != null)
-                ((left_ptr - ptr) / @sizeOf(KDNode)) + 1
-            else
-                0;
-
-            const right_ptr = @ptrToInt(node.right);
-            const right_i = if (node.right != null)
-                ((right_ptr - ptr) / @sizeOf(KDNode)) + 1
-            else
-                0;
-            std.log.warn("{}: point {}, left {}, right {}", .{ i + 1, node.point, left_i, right_i });
-        }
-    }
-
-    fn nearest_neighbor(self: *@This(), point: Point) Point {
-        self.print();
-        if (nns(self.root, point, 0)) |res| {
-            return res.node.point;
-        } else {
-            return self.root.point;
-        }
-    }
-
-    fn deinit(self: @This()) void {
-        self.allocator.free(self.nodes);
     }
 };
 
@@ -223,7 +96,7 @@ test "Algorithm regression test" {
     std.testing.expectEqual(@as(?*SearchContext, null), res);
 }
 
-test "kdtree functionality test" {
+test "k-d tree functionality test" {
     const test_points: [10]Point = .{
         Point{ .id = 0, .rank = 0, .x = 10, .y = 10 },
         Point{ .id = 0, .rank = 0, .x = -11, .y = -11 },
@@ -237,10 +110,17 @@ test "kdtree functionality test" {
         Point{ .id = 0, .rank = 0, .x = -70, .y = 70 },
     };
 
-    var tree = try KDTree.init(std.testing.allocator, &test_points);
+    var datalist: [10]kd.KDData = undefined;
+    for (test_points) |tp, i| {
+        datalist[i] = .{ .pos = .{ .x = tp.x, .y = tp.y }, .id = i };
+    }
+
+    var tree = try kd.KDTree.kdtree(std.testing.allocator, &datalist);
     defer tree.deinit();
 
-    std.testing.expectEqual(test_points[0], tree.nearest_neighbor(Point{ .x = 0, .y = 0, .rank = 0, .id = 0 }));
-    const nn = tree.nearest_neighbor(Point{ .x = 90, .y = 0, .rank = 0, .id = 0 });
-    std.log.warn("{}", .{nn});
+    tree.print();
+
+    // std.testing.expectEqual(test_points[0], tree.nearest_neighbor(Point{ .x = 0, .y = 0, .rank = 0, .id = 0 }));
+    // const nn = tree.nearest_neighbor(Point{ .x = 90, .y = 0, .rank = 0, .id = 0 });
+    // std.log.warn("{}", .{nn});
 }
