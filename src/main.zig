@@ -29,7 +29,6 @@ var gpa: std.heap.GeneralPurposeAllocator(.{}) = undefined;
 const SearchContext = struct {
     points: []Point,
     pointlist: std.ArrayList(Point),
-    // kdtree: KDTree,
 };
 
 export fn create(points_begin: [*]const Point, points_end: *const Point) callconv(.C) *SearchContext {
@@ -39,7 +38,6 @@ export fn create(points_begin: [*]const Point, points_end: *const Point) callcon
 
     sc.points = gpa.allocator.dupe(Point, points_begin[0..len]) catch |e| @panic("Out of memory!");
     sc.pointlist = std.ArrayList(Point).init(&gpa.allocator);
-    // sc.kdtree = KDTree.init(&gpa.allocator, sc.points) catch |e| @panic("Out of memory!");
 
     return sc;
 }

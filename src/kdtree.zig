@@ -13,6 +13,38 @@ pub const Pos = struct {
     }
 };
 
+pub const Rect = struct {
+    low: Pos,
+    high: Pos,
+
+    fn init(lx: f32, ly: f32, hx: f32, hy: f32) @This() {
+        const low = Pos{ .x = std.math.min(lx, hx), .y = std.math.min(ly, hy) };
+        const high = Pos{ .x = std.math.max(lx, hx), .y = std.math.max(ly, hy) };
+        return @This(){
+            .low = low,
+            .high = high,
+        };
+    }
+
+    fn print(self: *const @This()) void {
+        std.log.warn("rect {d} {d} {d} {d}", .{ self.low.x, self.low.y, self.high.x, self.high.y });
+    }
+
+    fn contains(self: Rect, pos: Pos) bool {
+        return pos.x >= self.low.x and
+            pos.x < self.high.x and
+            pos.y >= self.low.y and
+            pos.y < self.high.y;
+    }
+
+    fn overlaps(self: Rect, other: Rect) bool {
+        return self.contains(other.low) or
+            self.contains(other.high) or
+            other.contains(self.low) or
+            other.contains(self.high);
+    }
+};
+
 pub const KDData = struct {
     id: usize,
     pos: Pos,
@@ -20,7 +52,7 @@ pub const KDData = struct {
     fn cmp(axis: Axis, lhs: @This(), rhs: @This()) bool {
         return switch (axis) {
             .Horizontal => lhs.pos.x < rhs.pos.x,
-            .Vertical => lhs.pos.y < lhs.pos.y,
+            .Vertical => lhs.pos.y < rhs.pos.y,
         };
     }
 };
@@ -90,6 +122,7 @@ const NNSRes = struct {
 pub const KDTree = struct {
     root: ?*KDNode,
     allocator: *std.mem.Allocator,
+    area: Rect,
 
     pub fn deinit(self: @This()) void {
         if (self.root) |root| {
@@ -109,6 +142,7 @@ pub const KDTree = struct {
         var self = @This(){
             .root = null,
             .allocator = allocator,
+            .area = .{ .low = .{ .x = 0, .y = 0 }, .high = .{ .x = 0, .y = 0 } },
         };
         self.root = try self._kdtree(datalist, 0);
         return self;
@@ -122,11 +156,19 @@ pub const KDTree = struct {
 
         std.sort.sort(KDData, datalist, axis, KDData.cmp);
         const median = datalist.len / 2;
+        const mdat = datalist[median];
+
+        if (!self.area.contains(mdat.pos)) {
+            self.area.low.x = std.math.min(mdat.pos.x, self.area.low.x);
+            self.area.low.y = std.math.min(mdat.pos.y, self.area.low.y);
+            self.area.high.x = std.math.max(mdat.pos.x, self.area.high.x);
+            self.area.high.y = std.math.max(mdat.pos.y, self.area.high.y);
+        }
 
         var node = try self.allocator.create(KDNode);
         node.* = .{
-            .pos = datalist[median].pos,
-            .id = datalist[median].id,
+            .pos = mdat.pos,
+            .id = mdat.id,
             .left = try self._kdtree(datalist[0..median], depth + 1),
             .right = try self._kdtree(datalist[median + 1 ..], depth + 1),
         };
@@ -182,9 +224,41 @@ pub const KDTree = struct {
             .dist = best_dist,
         };
     }
+
+    pub fn range(self: *@This(), matches: *std.ArrayList(usize), rect: Rect) anyerror!void {
+        if (!self.area.overlaps(rect)) {
+            return;
+        }
+        if (self.root) |root| {
+            try self._query(matches, root, rect, self.area, 0);
+            return;
+        }
+        return error.EmptyTree;
+    }
+
+    fn _query(self: *@This(), matches: *std.ArrayList(usize), inode: ?*KDNode, rect: Rect, area: Rect, depth: usize) anyerror!void {
+        if (inode == null) return;
+        const node = inode.?;
+        if (rect.contains(node.pos)) {
+            try matches.append(node.id);
+        }
+
+        const axis: Axis = if (depth % 2 == 0) .Horizontal else .Vertical;
+        const leftrect = switch (axis) {
+            .Horizontal => Rect.init(area.low.x, area.low.y, node.pos.x, area.high.y),
+            .Vertical => Rect.init(area.low.x, area.low.y, area.high.x, node.pos.y),
+        };
+        const rightrect = switch (axis) {
+            .Horizontal => Rect.init(node.pos.x, area.low.y, area.high.x, area.high.y),
+            .Vertical => Rect.init(area.low.x, node.pos.y, area.high.x, area.high.y),
+        };
+
+        if (leftrect.overlaps(rect)) try self._query(matches, node.left, rect, leftrect, depth + 1);
+        if (rightrect.overlaps(rect)) try self._query(matches, node.right, rect, rightrect, depth + 1);
+    }
 };
 
-test "k-d tree functionality test" {
+test "k-d tree nearest neighbor search" {
     const test_points: [10]Pos = .{
         Pos{ .x = 10, .y = 10 },
         Pos{ .x = -11, .y = -11 },
@@ -224,5 +298,38 @@ test "k-d tree functionality test" {
         var id = try tree.nns(Pos{ .x = 25, .y = -25 });
         var result = test_points[id];
         std.testing.expectEqual(id, 2);
+    }
+}
+
+test "k-d tree range query" {
+    const test_points: [10]Pos = .{
+        Pos{ .x = 10, .y = 10 },
+        Pos{ .x = -11, .y = -11 },
+        Pos{ .x = 11, .y = -11 },
+        Pos{ .x = 40, .y = 10 },
+        Pos{ .x = 40, .y = -10 },
+        Pos{ .x = -40, .y = 10 },
+        Pos{ .x = -40, .y = -10 },
+        Pos{ .x = 70, .y = 0 },
+        Pos{ .x = -70, .y = -70 },
+        Pos{ .x = -70, .y = 70 },
+    };
+
+    var datalist: [10]KDData = undefined;
+    for (test_points) |tp, i| {
+        datalist[i] = .{ .pos = .{ .x = tp.x, .y = tp.y }, .id = i };
+    }
+
+    var tree = try KDTree.kdtree(std.testing.allocator, &datalist);
+    defer tree.deinit();
+
+    // tree.print();
+
+    {
+        var matches = std.ArrayList(usize).init(std.testing.allocator);
+        defer matches.deinit();
+        try tree.range(&matches, Rect.init(-50, -50, 5, 5));
+
+        std.testing.expectEqualSlices(usize, matches.items, &[_]usize{ 6, 1 });
     }
 }
