@@ -157,8 +157,6 @@ pub const KDTree = struct {
 
     // Recursive algorithm to build the k-d tree
     fn _kdtree(self: *@This(), datalist: []KDData, depth: usize) anyerror!?*KDNode {
-        const t = tracy.trace(@src());
-        defer t.end();
         if (datalist.len == 0) return null;
 
         const axis: Axis = if (depth % 2 == 0) .Horizontal else .Vertical;
@@ -204,8 +202,6 @@ pub const KDTree = struct {
 
     // Recursive algorithm to search the k-d tree
     fn _nns(self: *@This(), node: ?*KDNode, pos: Pos, depth: usize) ?NNSRes {
-        const t = tracy.trace(@src());
-        defer t.end();
         if (node == null) return null;
         const axis: Axis = if (depth % 2 == 0) .Horizontal else .Vertical;
         var best_node = node.?;
@@ -254,8 +250,6 @@ pub const KDTree = struct {
 
     // fn _query(self: *@This(), matches: *std.ArrayList(usize), inode: ?*KDNode, rect: Rect, area: Rect, depth: usize) anyerror!void {
     fn _query(self: *@This(), matches: *std.ArrayList(usize), inode: ?*KDNode, rect: Rect, depth: usize) anyerror!void {
-        const t = tracy.trace(@src());
-        defer t.end();
         if (inode == null) return;
         const node = inode.?;
         if (rect.contains(node.pos)) {

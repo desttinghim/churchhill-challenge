@@ -47,14 +47,15 @@ pub export fn create(points_begin: [*]const Point, points_end: *const Point) cal
 
     var datalist = gpa.allocator.alloc(kd.KDData, sc.points.len) catch |e| @panic("Out of memory!");
     defer gpa.allocator.free(datalist);
-    for (sc.points) |point, i| {
+    {
         const ti = tracy.trace(@src());
         defer ti.end();
-        datalist[i] = .{ .pos = .{ .x = point.x, .y = point.y }, .id = i };
+        for (sc.points) |point, i| {
+            datalist[i] = .{ .pos = .{ .x = point.x, .y = point.y }, .id = i };
+        }
     }
 
     sc.kdtree = kd.KDTree.kdtree(&gpa.allocator, datalist) catch |e| @panic("Couldn't init k-d tree");
-    // sc.kdtree.print();
 
     return sc;
 }
@@ -62,13 +63,6 @@ pub export fn create(points_begin: [*]const Point, points_end: *const Point) cal
 fn point_cmp(ctx: u0, lhs: Point, rhs: Point) bool {
     return lhs.rank < rhs.rank;
 }
-
-// fn point_is_inside(p: Point, rect: Rect) bool {
-//     return p.x > rect.lx and
-//         p.x < rect.hx and
-//         p.y > rect.ly and
-//         p.y < rect.hy;
-// }
 
 pub export fn search(sc: *SearchContext, rect: *const Rect, count: i32, out_points: [*]Point) callconv(.C) i32 {
     const t = tracy.trace(@src());
@@ -78,16 +72,9 @@ pub export fn search(sc: *SearchContext, rect: *const Rect, count: i32, out_poin
     var querylist = &sc.querylist;
     defer querylist.shrinkRetainingCapacity(0);
 
-    // for (sc.points) |point| {
-    //     if (point_is_inside(point, rect.*)) {
-    //         pointlist.append(point) catch |e| @panic("Out of memory!");
-    //     }
-    // }
-
     sc.kdtree.range(querylist, kd.Rect.init(rect.lx, rect.ly, rect.hx, rect.hy)) catch |e| @panic("Couldn't query");
 
     for (querylist.items) |match, i| {
-        // std.log.warn("{: >2}: {: >5}", .{ i, match });
         pointlist.append(sc.points[match]) catch |e| @panic("Couldn't append to pointlist");
     }
 
@@ -123,19 +110,6 @@ test "Algorithm regression test" {
         var buf = try std.testing.allocator.alloc(Point, search_test.count);
         defer std.testing.allocator.free(buf);
         var test_count = search(sc, &search_test.rect, @intCast(i32, search_test.count), buf.ptr);
-        // search_test.rect.print();
-        // std.log.warn("test_data", .{});
-        // for (search_test.items) |point, idx| {
-        //     const t2 = tracy.trace(@src());
-        //     defer t2.end();
-        //     point.print();
-        // }
-        // std.log.warn("k-d tree query", .{});
-        // for (buf) |res, idx| {
-        //     const t2 = tracy.trace(@src());
-        //     defer t2.end();
-        //     res.print();
-        // }
         std.testing.expectEqual(@intCast(i32, search_test.actual), test_count);
         std.testing.expectEqualSlices(Point, search_test.items, buf[0..@intCast(usize, test_count)]);
     }
