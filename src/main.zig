@@ -50,11 +50,25 @@ pub const Rect = packed struct {
         std.log.warn("lx: {d}, ly: {d}, hx: {d}, hy: {d}", .{ self.lx, self.ly, self.hx, self.hy });
     }
 
-    pub fn contains(self: Rect, pos: Point) bool {
+    pub fn contains_point(self: Rect, pos: Point) bool {
         return pos.x > self.lx and
             pos.x < self.hx and
             pos.y > self.ly and
             pos.y < self.hy;
+    }
+
+    pub fn contains(self: Rect, x: f32, y: f32) bool {
+        return x > self.lx and
+            x < self.hx and
+            y > self.ly and
+            y < self.hy;
+    }
+
+    pub fn overlaps(self: Rect, other: Rect) bool {
+        return self.contains(other.lx, other.ly) or
+            self.contains(other.hx, other.hy) or
+            other.contains(self.lx, self.ly) or
+            other.contains(self.hx, self.hy);
     }
 };
 
@@ -94,6 +108,7 @@ pub export fn search(sc: *SearchContext, rect: *const Rect, count: i32, out_poin
     sc.kdtree.range(&sc.heap, rect.*, @intCast(usize, count)) catch |e| std.debug.panic("Couldn't query! {}", .{e});
     // sc.heap.print();
     defer sc.heap.clear();
+    sc.kdtree.print();
 
     const mincount = std.math.min(@intCast(usize, count), sc.heap.list.items.len);
     std.mem.copy(Point, out_points[0..mincount], sc.heap.list.items[0..mincount]);
@@ -142,7 +157,15 @@ test "Algorithm regression test" {
         var buf = try std.testing.allocator.alloc(Point, search_test.count);
         defer std.testing.allocator.free(buf);
         var test_count = search(sc, &search_test.rect, @intCast(i32, search_test.count), buf.ptr);
-        var a: usize = 0;
+        search_test.rect.print();
+        std.log.warn("Expected: ", .{});
+        for (search_test.items) |point| {
+            point.print();
+        }
+        std.log.warn("Results: ", .{});
+        for (buf[0..@intCast(usize, test_count)]) |point| {
+            point.print();
+        }
         std.testing.expectEqual(@intCast(i32, search_test.actual), test_count);
         std.testing.expectEqualSlices(Point, search_test.items, buf[0..@intCast(usize, test_count)]);
     }

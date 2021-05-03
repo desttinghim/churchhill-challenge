@@ -14,8 +14,47 @@ pub const Axis = enum {
 
 pub const KDNode = struct {
     point: Point,
-    left: ?*@This(),
-    right: ?*@This(),
+    left: ?*@This() = null,
+    right: ?*@This() = null,
+
+    fn printAll(self: *@This(), depth: usize) void {
+        self.print(depth);
+        if (self.left) |left| left.printAll(depth + 1);
+        if (self.right) |right| right.printAll(depth + 1);
+    }
+
+    fn print(self: *@This(), depth: usize) void {
+        var depthbuf: [100]u8 = undefined;
+        var depthslice: []u8 = undefined;
+        var i: usize = 0;
+        while (i < depth) : (i += 1) {
+            depthbuf[i * 2] = '-';
+            depthbuf[i * 2 + 1] = '-';
+        }
+        depthslice = depthbuf[0 .. i * 2];
+        var leftbuf: [100]u8 = undefined;
+        var leftslice: []u8 = undefined;
+        var rightbuf: [100]u8 = undefined;
+        var rightslice: []u8 = undefined;
+        if (self.left) |left| {
+            leftslice = std.fmt.bufPrint(&leftbuf, "{}", .{left.point.id}) catch unreachable;
+        } else {
+            leftslice = std.fmt.bufPrint(&leftbuf, "None", .{}) catch unreachable;
+        }
+        if (self.right) |right| {
+            rightslice = std.fmt.bufPrint(&rightbuf, "{}", .{right.point.id}) catch unreachable;
+        } else {
+            rightslice = std.fmt.bufPrint(&rightbuf, "None", .{}) catch unreachable;
+        }
+        std.log.warn("|{s: <20}id: {: >4}, left: {s: >5}, right: {s: >5}, x: {d: >8.2}, y: {d: >8.2}", .{
+            depthslice,
+            self.point.id,
+            leftslice,
+            rightslice,
+            self.point.x,
+            self.point.y,
+        });
+    }
 };
 
 const NNSRes = struct {
@@ -23,16 +62,70 @@ const NNSRes = struct {
     dist: f32,
 };
 
+fn super_key_compare(axis: Axis, point1: *Point, point2: *Point) f32 {
+    var diff: f32 = 0;
+    switch (axis) {
+        .Horizontal => {
+            diff = point1.x - point2.x;
+            if (diff != 0) {
+                return diff;
+            }
+            diff = point1.y - point2.y;
+            if (diff != 0) {
+                return diff;
+            }
+        },
+        .Vertical => {
+            diff = point1.y - point2.y;
+            if (diff != 0) {
+                return diff;
+            }
+            diff = point1.x - point2.x;
+            if (diff != 0) {
+                return diff;
+            }
+        },
+    }
+    return diff;
+}
+
+fn super_key_compare_sort(axis: Axis, point1: *Point, point2: *Point) bool {
+    return super_key_compare(axis, point1, point2) < 0;
+}
+
+fn remove_duplicates(axis: Axis, points: []*Point) []*Point {
+    var end: usize = 0;
+    var i: usize = 1;
+    while (i < points.len) : (i += 1) {
+        const compare = super_key_compare(axis, points[i], points[i - 1]);
+        if (compare < 0) {
+            std.debug.panic("Sort failure! {} {} \n{}\n{}", .{ axis, compare, points[i], points[i - 1] });
+        } else if (compare > 0) {
+            end += 1;
+            points[end] = points[i];
+        }
+    }
+    return points[0..end];
+}
+
 pub const KDTree = struct {
     root: ?*KDNode,
     nodelist: std.ArrayList(KDNode),
-    // area: Rect,
+    area: Rect,
 
     pub fn deinit(self: *@This()) void {
         const t = tracy.trace(@src());
         defer t.end();
         self.root = null;
         self.nodelist.deinit();
+    }
+
+    pub fn print(self: *@This()) void {
+        const t = tracy.trace(@src());
+        defer t.end();
+        if (self.root) |root| {
+            root.printAll(0);
+        }
     }
 
     /// Takes an allocator and a slice of KDData to make a k-d tree of. Returns
@@ -43,35 +136,139 @@ pub const KDTree = struct {
         var self = @This(){
             .root = null,
             .nodelist = try std.ArrayList(KDNode).initCapacity(allocator, datalist.len),
-            // .area = .{ .lx = 0, .ly = 0, .hx = 0, .hy = 0},
+            .area = .{ .lx = 0, .ly = 0, .hx = 0, .hy = 0 },
         };
-        self.root = try self._kdtree(datalist, 0);
+        var xsort = try allocator.alloc(*Point, datalist.len);
+        defer allocator.free(xsort);
+        var ysort = try allocator.alloc(*Point, datalist.len);
+        defer allocator.free(ysort);
+        for (datalist) |_, i| {
+            xsort[i] = &datalist[i];
+            ysort[i] = &datalist[i];
+        }
+        // const mdat = datalist[median];
+
+        // if (!self.area.contains_point(mdat)) {
+        //     self.area.lx = std.math.min(mdat.x, self.area.lx);
+        //     self.area.ly = std.math.min(mdat.y, self.area.ly);
+        //     self.area.hx = std.math.max(mdat.x, self.area.hx);
+        //     self.area.hy = std.math.max(mdat.y, self.area.hy);
+        // }
+
+        std.sort.sort(*Point, xsort, Axis.Horizontal, super_key_compare_sort);
+        var xsort_dedup = remove_duplicates(Axis.Horizontal, xsort);
+        std.sort.sort(*Point, ysort, Axis.Vertical, super_key_compare_sort);
+        var ysort_dedup = remove_duplicates(Axis.Vertical, ysort);
+
+        var temp = try allocator.alloc(*Point, xsort_dedup.len);
+        defer allocator.free(temp);
+
+        std.log.warn("{s:-^100}", .{"xsort"});
+        for (xsort) |x| {
+            x.print();
+        }
+        std.log.warn("{s:-^100}", .{"ysort"});
+        for (ysort) |y| {
+            y.print();
+        }
+
+        self.root = try self._kdtree(temp, xsort_dedup, ysort_dedup, 0);
         return self;
     }
 
     // Recursive algorithm to build the k-d tree
-    fn _kdtree(self: *@This(), datalist: []Point, depth: usize) anyerror!?*KDNode {
-        if (datalist.len == 0) return null;
+    fn _kdtree(self: *@This(), temp: []*Point, xsort: []*Point, ysort: []*Point, depth: usize) anyerror!?*KDNode {
+        if (xsort.len == 0) return null;
+        std.debug.assert(xsort.len == ysort.len);
 
         const axis: Axis = if (depth % 2 == 0) .Horizontal else .Vertical;
 
-        std.sort.sort(Point, datalist, axis, Point.cmp);
-        const median = datalist.len / 2;
-        const mdat = datalist[median];
-
-        // if (!self.area.contains(mdat.pos)) {
-        //     self.area.low.x = std.math.min(mdat.pos.x, self.area.low.x);
-        //     self.area.low.y = std.math.min(mdat.pos.y, self.area.low.y);
-        //     self.area.high.x = std.math.max(mdat.pos.x, self.area.high.x);
-        //     self.area.high.y = std.math.max(mdat.pos.y, self.area.high.y);
-        // }
-
         var node = self.nodelist.addOneAssumeCapacity();
-        node.* = .{
-            .point = mdat,
-            .left = try self._kdtree(datalist[0..median], depth + 1),
-            .right = try self._kdtree(datalist[median + 1 ..], depth + 1),
-        };
+        std.log.warn("depth: {} -------------", .{depth});
+        std.log.warn("{s:-^100}", .{"xsort"});
+        for (xsort) |x| {
+            x.print();
+        }
+        std.log.warn("{s:-^100}", .{"ysort"});
+        for (ysort) |y| {
+            y.print();
+        }
+
+        if (xsort.len == 1) {
+            std.log.warn("1 node case", .{});
+            node.* = .{
+                .point = xsort[0].*,
+            };
+        } else if (xsort.len == 2) {
+            std.log.warn("2 node case", .{});
+            var node2 = self.nodelist.addOneAssumeCapacity();
+            node2.* = .{
+                .point = xsort[1].*,
+            };
+            node.* = .{
+                .point = xsort[0].*,
+                .right = node2,
+            };
+        } else if (xsort.len == 3) {
+            std.log.warn("3 node case", .{});
+            var node2 = self.nodelist.addOneAssumeCapacity();
+            var node3 = self.nodelist.addOneAssumeCapacity();
+            node2.* = .{
+                .point = xsort[0].*,
+            };
+            node3.* = .{
+                .point = xsort[2].*,
+            };
+            node.* = .{
+                .point = xsort[1].*,
+                .left = node2,
+                .right = node3,
+            };
+        } else if (xsort.len > 3) {
+            const median = xsort.len / 2;
+            node.* = .{
+                .point = xsort[median].*,
+            };
+
+            std.mem.copy(*Point, temp, xsort);
+
+            var lower: usize = 0;
+            var upper: usize = median;
+            var j: usize = 0;
+            std.log.warn("Splitting, len {} median: {} axis: {}", .{ xsort.len, median, axis });
+            node.point.print();
+            while (j < ysort.len) : (j += 1) {
+                var compare = super_key_compare(axis, ysort[j], &node.point);
+                // ysort[j].print();
+                // node.point.print();
+                if (compare < 0) {
+                    std.log.warn("lower compare {:8.2} {}", .{ compare, j });
+                    xsort[lower] = ysort[j];
+                    lower += 1;
+                } else if (compare > 0) {
+                    std.log.warn("upper compare {:8.2} {}", .{ compare, j });
+                    xsort[upper] = ysort[j];
+                    upper += 1;
+                }
+            }
+            // std.log.warn("depth: {} lower {} upper {} -------------", .{ depth, lower, upper });
+
+            std.mem.copy(*Point, ysort, temp);
+
+            node.left = try self._kdtree(
+                temp[0..lower],
+                xsort[0..lower],
+                ysort[0..lower],
+                depth + 1,
+            );
+            node.right = try self._kdtree(
+                temp[median + 1 .. upper],
+                xsort[median + 1 .. upper],
+                ysort[median + 1 .. upper],
+                depth + 1,
+            );
+        }
+
         return node;
     }
 
@@ -143,7 +340,7 @@ pub const KDTree = struct {
     fn _query(self: *@This(), matches: *MinHeap, inode: ?*KDNode, rect: Rect, count: usize, depth: usize) anyerror!void {
         if (inode == null) return;
         const node = inode.?;
-        if (rect.contains(node.point)) {
+        if (rect.contains_point(node.point)) {
             if (matches.list.items.len < count) {
                 try matches.insert(node.point);
             } else {
