@@ -21,7 +21,7 @@ pub fn main() !void {
     const hy = (test_height / 2);
     const test_rect = search.Rect{ .lx = lx, .ly = ly, .hx = hx, .hy = hy };
 
-    const test_points = try get_test_points(test_rect, 1_000_000);
+    const test_points = try get_test_points(test_rect, 10_000_000);
     defer gpa.allocator.free(test_points);
     const tests = try get_tests(test_rect, 1_000);
     defer gpa.allocator.free(tests);
@@ -74,7 +74,7 @@ fn get_tests(test_rect: search.Rect, num_tests: usize) ![]Test {
     const height = test_rect.hy - test_rect.ly;
 
     var i: usize = 0;
-    while (i < 10) : (i += 1) {
+    while (i < num_tests) : (i += 1) {
         const twidth = ((rand.float(f32) + 0.25) * 0.5) * width;
         const theight = ((rand.float(f32) + 0.25) * 0.5) * height;
         const x = rand.float(f32) * (width - twidth);
