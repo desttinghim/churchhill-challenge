@@ -140,7 +140,7 @@ test "Robustness check" {
     }
     var res = destroy(sc);
 
-    std.testing.expectEqual(@as(?*SearchContext, null), res);
+    try std.testing.expectEqual(@as(?*SearchContext, null), res);
 }
 
 test "Algorithm regression test" {
@@ -166,11 +166,11 @@ test "Algorithm regression test" {
         for (buf[0..@intCast(usize, test_count)]) |point| {
             point.print();
         }
-        std.testing.expectEqual(@intCast(i32, search_test.actual), test_count);
-        std.testing.expectEqualSlices(Point, search_test.items, buf[0..@intCast(usize, test_count)]);
+        try std.testing.expectEqual(@intCast(i32, search_test.actual), test_count);
+        try std.testing.expectEqualSlices(Point, search_test.items, buf[0..@intCast(usize, test_count)]);
     }
 
     var res = destroy(sc);
 
-    std.testing.expectEqual(@as(?*SearchContext, null), res);
+    try std.testing.expectEqual(@as(?*SearchContext, null), res);
 }
