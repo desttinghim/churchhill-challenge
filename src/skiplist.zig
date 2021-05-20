@@ -2,21 +2,29 @@ const std = @import("std");
 const ListNode = @import("linked_list.zig").ListNode;
 const LinkedList = @import("linked_list.zig").LinkedList;
 const Allocator = std.mem.Allocator;
+const ArrayList = std.ArrayList;
 
 // A simplified Cache Sensitive Skip List data structure.
+pub fn CompareFns(comptime Key: type) type {
+    return struct {
+        isLessThan: fn(Key, Key) bool,
+        isEqual: fn(Key, Key) bool,
+        isGreaterThan: fn(Key, Key) bool,
+    };
+}
 
-pub fn ProxyItem(comptime Key: type, comptime Value: type, isLessThan: fn(Key, Key) bool) type {
-    const List = LinkedList(Key, Value, isLessThan);
+pub fn ProxyItem(comptime Key: type, comptime Value: type, cmp: CompareFns(Key)) type {
+    const List = LinkedList(Key, Value, cmp.isLessThan);
     return struct {
         key: Key,
         ptr: *List.Node,
     };
 }
 
-pub fn CSSL(comptime Key: type, comptime Value: type, isLessThan: fn(Key, Key) bool, comptime levels: usize, comptime skip: usize) type {
+pub fn CSSL(comptime Key: type, comptime Value: type, cmp: CompareFns(Key), comptime levels: usize, comptime skip: usize) type {
     return struct {
-        pub const List = LinkedList(Key, Value, isLessThan);
-        pub const Proxy = ProxyItem(Key, Value, isLessThan);
+        pub const List = LinkedList(Key, Value, cmp.isLessThan);
+        pub const Proxy = ProxyItem(Key, Value, cmp);
         // How many elements are skipped per level
         pub const SkipLen = init: {
             var initial_value: [levels]usize = undefined;
@@ -28,7 +36,7 @@ pub fn CSSL(comptime Key: type, comptime Value: type, isLessThan: fn(Key, Key) b
         allocator: *Allocator,
         proxies: []Proxy,
         list: List,
-        fastLanes: [levels][]?Key,
+        fastLanes: [levels]ArrayList(Key),
         
         pub fn initFromSlices(allocator: *Allocator, keys: []const Key, values: []const Value) !@This() {
             std.debug.assert(keys.len == values.len);
@@ -37,12 +45,9 @@ pub fn CSSL(comptime Key: type, comptime Value: type, isLessThan: fn(Key, Key) b
                 .proxies = try allocator.alloc(Proxy, keys.len),
                 .list = try List.initFromSlices(allocator, keys, values),
                 .fastLanes = init: {
-                    var initial_value: [levels][]?Key = undefined;
+                    var initial_value: [levels]ArrayList(Key) = undefined;
                     for (initial_value) |*lane, i| {
-                        lane.* = try allocator.alloc(?Key, @divTrunc(keys.len, SkipLen[i]) + 1);
-                        for (lane.*) |_, a| {
-                            lane.*[a] = null;
-                        }
+                        lane.* = ArrayList(Key).init(allocator);
                         // std.log.warn("SkipLen {} {}", .{i, SkipLen[i]});
                     }
                     break :init initial_value;
@@ -56,7 +61,7 @@ pub fn CSSL(comptime Key: type, comptime Value: type, isLessThan: fn(Key, Key) b
                     if (i % SkipLen[lvl] == 0) {
                         var index = @divTrunc(i, SkipLen[lvl]);
                         // std.log.warn("{} {}", .{i, index});
-                        self.fastLanes[lvl][index] = curr.key;
+                        try self.fastLanes[lvl].append(curr.key);
                     }
                 }
                 self.proxies[i].key = curr.key;
@@ -71,11 +76,13 @@ pub fn CSSL(comptime Key: type, comptime Value: type, isLessThan: fn(Key, Key) b
             self.list.deinit();
             self.allocator.free(self.proxies);
             for (self.fastLanes) |lane| {
-                self.allocator.free(lane);
+                lane.deinit();
             }
         }
 
-        // pub fn search(self: *@This(), key: Key) ?
+        // pub fn lookup(self: *@This(), key: Key) ?Value {
+
+        // }
     };
 }
 
@@ -83,16 +90,29 @@ fn u8isLessThan(a: u8, b: u8) bool {
     return a < b;
 }
 
+fn u8isEqual(a: u8, b: u8) bool {
+    return a == b;
+}
+
+fn u8isGreaterThan(a: u8, b: u8) bool {
+    return a < b;
+}
+
 test "Cache Sensitive Skip List" {
     const ordered_list_keys: [10]u8 = .{0, 1, 2, 3, 4, 5, 6, 7, 8, 9};
     const list_keys: [10]u8 = .{4, 3, 2, 1, 0, 9, 8, 7, 6, 5};
     const list_data: [10]u8 = .{'a', 'b', 'c', 'd', 'e', 'f', 'g', 'h', 'i', 'j'};
-    const SkipList = CSSL(u8, u8, u8isLessThan, 2, 2);
+    const cmp = CompareFns(u8) {
+        .isLessThan = u8isLessThan,
+        .isEqual = u8isEqual,
+        .isGreaterThan = u8isGreaterThan,
+    };
+    const SkipList = CSSL(u8, u8, cmp, 2, 2);
     var cssl = try SkipList.initFromSlices(std.testing.allocator, &list_keys, &list_data);
     defer cssl.deinit();
 
     for (cssl.fastLanes) |lane, i| {
-        std.log.warn("lane {}: {any}", .{i, lane});
+        std.log.warn("lane {}: {any}", .{i, lane.items});
     }
     for (cssl.proxies) |proxy, i| {
         std.log.warn("proxy {}: {any}", .{i, proxy.key});
