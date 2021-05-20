@@ -13,18 +13,21 @@ pub fn CompareFns(comptime Key: type) type {
     };
 }
 
-pub fn ProxyItem(comptime Key: type, comptime Value: type, cmp: CompareFns(Key)) type {
+pub fn ProxyItem(comptime Key: type, comptime Value: type, cmp: CompareFns(Key), comptime skip: usize) type {
     const List = LinkedList(Key, Value, cmp.isLessThan);
     return struct {
-        key: Key,
-        ptr: *List.Node,
+        // We store  multiple keys so that the index in the proxy list is the same as the
+        // index in the lowest level of the fast lane
+        keys: [skip]Key,
+        ptr: [skip]*List.Node,
     };
 }
 
 pub fn CSSL(comptime Key: type, comptime Value: type, cmp: CompareFns(Key), comptime levels: usize, comptime skip: usize) type {
+    std.debug.assert(levels > 0);
     return struct {
         pub const List = LinkedList(Key, Value, cmp.isLessThan);
-        pub const Proxy = ProxyItem(Key, Value, cmp);
+        pub const Proxy = ProxyItem(Key, Value, cmp, skip);
         // How many elements are skipped per level
         pub const SkipLen = init: {
             var initial_value: [levels]usize = undefined;
@@ -34,7 +37,7 @@ pub fn CSSL(comptime Key: type, comptime Value: type, cmp: CompareFns(Key), comp
             break :init initial_value;
         };
         allocator: *Allocator,
-        proxies: []Proxy,
+        proxies: ArrayList(Proxy),
         list: List,
         fastLanes: [levels]ArrayList(Key),
         
@@ -42,7 +45,7 @@ pub fn CSSL(comptime Key: type, comptime Value: type, cmp: CompareFns(Key), comp
             std.debug.assert(keys.len == values.len);
             var self = @This() {
                 .allocator = allocator,
-                .proxies = try allocator.alloc(Proxy, keys.len),
+                .proxies = try ArrayList(Proxy).initCapacity(allocator, @divTrunc(keys.len, SkipLen[0]) + 1),
                 .list = try List.initFromSlices(allocator, keys, values),
                 .fastLanes = init: {
                     var initial_value: [levels]ArrayList(Key) = undefined;
@@ -62,10 +65,18 @@ pub fn CSSL(comptime Key: type, comptime Value: type, cmp: CompareFns(Key), comp
                         var index = @divTrunc(i, SkipLen[lvl]);
                         // std.log.warn("{} {}", .{i, index});
                         try self.fastLanes[lvl].append(curr.key);
+                        if (lvl == 0) {
+                            try self.proxies.append(.{
+                                .keys = undefined, 
+                                .ptr = undefined,
+                            });
+                        }
                     }
                 }
-                self.proxies[i].key = curr.key;
-                self.proxies[i].ptr = curr;
+                const index = @divTrunc(i, skip);
+                const p_index = i % skip;
+                self.proxies.items[index].keys[p_index] = curr.key;
+                self.proxies.items[index].ptr[p_index] = curr;
                 current = curr.next;
             }
 
@@ -74,15 +85,49 @@ pub fn CSSL(comptime Key: type, comptime Value: type, cmp: CompareFns(Key), comp
 
         pub fn deinit(self: *@This()) void {
             self.list.deinit();
-            self.allocator.free(self.proxies);
+            self.proxies.deinit();
             for (self.fastLanes) |lane| {
                 lane.deinit();
             }
         }
 
-        // pub fn lookup(self: *@This(), key: Key) ?Value {
+        pub fn lookup(self: *@This(), key: Key) ?Value {
+            var pos = binSearch: {
+                var array = self.fastLanes[levels - 1].items;
+                var left: usize = 0;
+                var right: usize = array.len - 1;
+                while (left <= right) {
+                    var middle = @divTrunc(left + right, 2);
+                    if (cmp.isLessThan(array[middle], key)) {
+                        left = middle + 1;
+                    } else if(cmp.isGreaterThan(array[middle], key)) {
+                        right = middle - 1;
+                    } else {
+                        break :binSearch middle;
+                    }
+                }
+                break :binSearch left; // unsuccessful search in top, start from nearest point
+            };
 
-        // }
+            var lvl = levels - 1;
+            while (lvl > 0) : (lvl -= 1) {
+                // var rPos = pos - level_start_pos[level];
+                while (cmp.isLessThan(key, self.fastLanes[lvl].items[pos])){
+                    // rPos += 1;
+                    pos += 1;
+                }
+                if (lvl == 1) break;
+                pos = skip * pos;
+            }
+            // This line is in the original, but I want the value and not the key
+            // if (cmp.isEqual(key, self.fastLanes[1].items[pos])) return key;
+            var proxy = self.proxies.items[pos];
+            // Search through proxy
+            for (proxy.keys) |k, i| {
+                if (cmp.isEqual(key, k)) return proxy.ptr[i].value;
+            }
+            return null;
+        }
     };
 }
 
@@ -112,16 +157,22 @@ test "Cache Sensitive Skip List" {
     defer cssl.deinit();
 
     for (cssl.fastLanes) |lane, i| {
-        std.log.warn("lane {}: {any}", .{i, lane.items});
+        std.log.warn("lane {} | {any}", .{i, lane.items});
     }
-    for (cssl.proxies) |proxy, i| {
-        std.log.warn("proxy {}: {any}", .{i, proxy.key});
+    for (cssl.proxies.items) |proxy, i| {
+        std.log.warn("proxy {} | keys: {any}", .{i, proxy.keys});
     }
     var current: ?*SkipList.List.Node = cssl.list.head;
     var i: usize = 0;
     while (current) |curr| : (i += 1) {
-        std.log.warn("List node {}: {} {c}", .{i, curr.key, curr.value});
+        std.log.warn("List node {} | {} {c}", .{i, curr.key, curr.value});
         current = curr.next;
+    }
+
+    if (cssl.lookup(6)) |val| {
+        try std.testing.expectEqual(val, 'i');
+    } else {
+        return error.TestFailed;
     }
 }
 
