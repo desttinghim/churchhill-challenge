@@ -33,9 +33,14 @@ pub fn build(b: *Builder) void {
     linked_list_tests.setBuildMode(mode);
     linked_list_tests.setTarget(target);
 
+    var skip_list_tests = b.addTest("src/skiplist.zig");
+    skip_list_tests.setBuildMode(mode);
+    skip_list_tests.setTarget(target);
+
     const test_step = b.step("test", "Run library tests");
     test_step.dependOn(&main_tests.step);
     test_step.dependOn(&linked_list_tests.step);
+    test_step.dependOn(&skip_list_tests.step);
 
     const run_cmd = exe.run();
     const run_step = b.step("run", "Run benchmark");
