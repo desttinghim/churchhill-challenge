@@ -106,20 +106,26 @@ pub fn CSSL(comptime Key: type, comptime Value: type, cmp: CompareFns(Key), comp
                         break :binSearch middle;
                     }
                 }
-                break :binSearch left; // unsuccessful search in top, start from nearest point
+                break :binSearch right; // unsuccessful search in top, start from nearest point
             };
 
             var lvl = levels - 1;
-            while (lvl > 0) : (lvl -= 1) {
-                // var rPos = pos - level_start_pos[level];
-                // std.log.warn("pos {}, lvl {}, len {}", .{pos, lvl, self.fastLanes[lvl].items.len});
-                while (pos < self.fastLanes[lvl].items.len and cmp.isLessThan(key, self.fastLanes[lvl].items[pos])){
-                    // rPos += 1;
+            while (lvl >= 0) : (lvl -= 1) {
+                var fastLane = self.fastLanes[lvl].items;
+                var prev = pos;
+                while (pos < fastLane.len and
+                           (cmp.isGreaterThan(key, fastLane[pos]) or cmp.isEqual(key, fastLane[pos]))) {
+                    prev = pos;
                     pos += 1;
                 }
-                if (lvl == 1) break;
-                pos = skip * pos;
+                if (lvl == 0) {
+                    pos = prev;
+                    break;
+                }
+                pos = prev * skip;
             }
+            // Item is not in skiplist
+            if (pos >= self.fastLanes[0].items.len) return null;
             // This line is in the original, but I want the value and not the key
             // if (cmp.isEqual(key, self.fastLanes[1].items[pos])) return key;
             var proxy = self.proxies.items[pos];
@@ -141,7 +147,7 @@ fn u8isEqual(a: u8, b: u8) bool {
 }
 
 fn u8isGreaterThan(a: u8, b: u8) bool {
-    return a < b;
+    return a > b;
 }
 
 test "Cache Sensitive Skip List" {
@@ -173,12 +179,20 @@ test "Cache Sensitive Skip List" {
 
     if (cssl.lookup(6)) |val| {
         try std.testing.expectEqual(val, 'i');
-        std.log.warn("val {c}", .{val});
     } else {
+        std.log.warn("Could not find 6", .{});
         return error.TestFailed;
     }
     if (cssl.lookup(11)) |val| {
         std.log.warn("val {c}", .{val});
         return error.TestPassedWrong;
+    }
+    for (ordered_list_keys) |key, idx| {
+        if (cssl.lookup(key)) |val| {
+            try std.testing.expectEqual(val, ordered_list_data[idx]);
+        } else {
+            std.log.warn("key {}, val {c}", .{key, ordered_list_data[idx]});
+            return error.TestFailed;
+        }
     }
 }
