@@ -2,14 +2,14 @@ const std = @import("std");
 const Allocator = std.mem.Allocator;
 
 /// Generic Linked List Node 
-pub fn ListNode(comptime Key: type, comptime Value: type, isLessThan: fn(Key, Key) bool) type {
+pub fn ListNode(comptime Key: type, comptime Value: type, isLessThan: fn (Key, Key) bool) type {
     return struct {
         key: Key,
         value: Value,
         next: ?*@This(),
-        
+
         fn node(key: Key, value: Value) @This() {
-            return @This() {
+            return @This(){
                 .key = key,
                 .value = value,
                 .next = null,
@@ -36,7 +36,7 @@ pub fn ListNode(comptime Key: type, comptime Value: type, isLessThan: fn(Key, Ke
 
         fn tail(self: *@This()) *Node {
             var current: ?*Node = head;
-            while(current) |n| {
+            while (current) |n| {
                 var next = n.next;
                 if (next == null) return n;
                 current = next;
@@ -46,7 +46,7 @@ pub fn ListNode(comptime Key: type, comptime Value: type, isLessThan: fn(Key, Ke
 }
 
 /// Generic Linked List
-pub fn LinkedList(comptime Key: type, comptime Value: type, isLessThan: fn(Key, Key) bool) type {
+pub fn LinkedList(comptime Key: type, comptime Value: type, isLessThan: fn (Key, Key) bool) type {
     return struct {
         pub const Node = ListNode(Key, Value, isLessThan);
         head: *Node,
@@ -72,7 +72,7 @@ pub fn LinkedList(comptime Key: type, comptime Value: type, isLessThan: fn(Key, 
 
         pub fn deinit(self: *@This()) void {
             var current: ?*Node = self.head;
-            while(current) |n| {
+            while (current) |n| {
                 current = n.next;
                 self.allocator.destroy(n);
             }
@@ -110,15 +110,15 @@ fn u8isLessThan(a: u8, b: u8) bool {
 }
 
 test "Build Linked List" {
-    const list_keys: [10]u8 = .{9, 8, 7, 6, 5, 4, 3, 2, 1, 0};
-    const list_data: [10]u8 = .{'a', 'b', 'c', 'd', 'e', 'f', 'g', 'h', 'i', 'j'};
+    const list_keys: [10]u8 = .{ 9, 8, 7, 6, 5, 4, 3, 2, 1, 0 };
+    const list_data: [10]u8 = .{ 'a', 'b', 'c', 'd', 'e', 'f', 'g', 'h', 'i', 'j' };
     const List = LinkedList(u8, u8, u8isLessThan);
     var list = try List.initFromSlices(std.testing.allocator, &list_keys, &list_data);
     defer list.deinit();
 
     var current: ?*ListNode(u8, u8, u8isLessThan) = list.head;
     var i = list_keys.len;
-    while(current) |n| {
+    while (current) |n| {
         // std.log.warn("{*} {}: {c} {}", .{n, n.key, n.value, n.next});
         try std.testing.expectEqual(n.key, list_keys[i - 1]);
         current = n.next;
@@ -127,19 +127,19 @@ test "Build Linked List" {
 }
 
 test "Build Linked List from unsorted slice" {
-    const ordered_list_keys: [10]u8 = .{0, 1, 2, 3, 4, 5, 6, 7, 8, 9};
-    const list_keys: [10]u8 = .{4, 3, 2, 1, 0, 9, 8, 7, 6, 5};
-    const list_data: [10]u8 = .{'a', 'b', 'c', 'd', 'e', 'f', 'g', 'h', 'i', 'j'};
+    const ordered_list_keys: [10]u8 = .{ 0, 1, 2, 3, 4, 5, 6, 7, 8, 9 };
+    const list_keys: [10]u8 = .{ 4, 3, 2, 1, 0, 9, 8, 7, 6, 5 };
+    const list_data: [10]u8 = .{ 'a', 'b', 'c', 'd', 'e', 'f', 'g', 'h', 'i', 'j' };
     const List = LinkedList(u8, u8, u8isLessThan);
     var list = try List.initFromSlices(std.testing.allocator, &list_keys, &list_data);
     defer list.deinit();
 
     var current: ?*ListNode(u8, u8, u8isLessThan) = list.head;
     var i: usize = 0;
-    while(current) |n| {
+    while (current) |n| {
         // std.log.warn("{}: {c} {}", .{n.key, n.value, n.next});
         std.testing.expectEqual(n.key, ordered_list_keys[i]) catch |e| {
-            std.log.warn("List out of order, expected {}, found {}", .{ordered_list_keys[i], n.key});
+            std.log.warn("List out of order, expected {}, found {}", .{ ordered_list_keys[i], n.key });
             return e;
         };
         current = n.next;

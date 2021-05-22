@@ -7,9 +7,9 @@ const ArrayList = std.ArrayList;
 // A simplified Cache Sensitive Skip List data structure.
 pub fn CompareFns(comptime Key: type) type {
     return struct {
-        isLessThan: fn(Key, Key) bool,
-        isEqual: fn(Key, Key) bool,
-        isGreaterThan: fn(Key, Key) bool,
+        isLessThan: fn (Key, Key) bool,
+        isEqual: fn (Key, Key) bool,
+        isGreaterThan: fn (Key, Key) bool,
     };
 }
 
@@ -40,10 +40,10 @@ pub fn CSSL(comptime Key: type, comptime Value: type, cmp: CompareFns(Key), comp
         proxies: ArrayList(Proxy),
         list: List,
         fastLanes: [levels]ArrayList(Key),
-        
+
         pub fn initFromSlices(allocator: *Allocator, keys: []const Key, values: []const Value) !@This() {
             std.debug.assert(keys.len == values.len);
-            var self = @This() {
+            var self = @This(){
                 .allocator = allocator,
                 .proxies = try ArrayList(Proxy).initCapacity(allocator, @divTrunc(keys.len, SkipLen[0]) + 1),
                 .list = try List.initFromSlices(allocator, keys, values),
@@ -67,7 +67,7 @@ pub fn CSSL(comptime Key: type, comptime Value: type, cmp: CompareFns(Key), comp
                         try self.fastLanes[lvl].append(curr.key);
                         if (lvl == 0) {
                             try self.proxies.append(.{
-                                .keys = undefined, 
+                                .keys = undefined,
                                 .ptr = undefined,
                             });
                         }
@@ -100,7 +100,7 @@ pub fn CSSL(comptime Key: type, comptime Value: type, cmp: CompareFns(Key), comp
                     var middle = @divTrunc(left + right, 2);
                     if (cmp.isLessThan(array[middle], key)) {
                         left = middle + 1;
-                    } else if(cmp.isGreaterThan(array[middle], key)) {
+                    } else if (cmp.isGreaterThan(array[middle], key)) {
                         right = middle - 1;
                     } else {
                         break :binSearch middle;
@@ -114,7 +114,8 @@ pub fn CSSL(comptime Key: type, comptime Value: type, cmp: CompareFns(Key), comp
                 var fastLane = self.fastLanes[lvl].items;
                 var prev = pos;
                 while (pos < fastLane.len and
-                           (cmp.isGreaterThan(key, fastLane[pos]) or cmp.isEqual(key, fastLane[pos]))) {
+                    (cmp.isGreaterThan(key, fastLane[pos]) or cmp.isEqual(key, fastLane[pos])))
+                {
                     prev = pos;
                     pos += 1;
                 }
@@ -151,11 +152,11 @@ fn u8isGreaterThan(a: u8, b: u8) bool {
 }
 
 test "Cache Sensitive Skip List" {
-    const ordered_list_keys: [10]u8 = .{0, 1, 2, 3, 4, 5, 6, 7, 8, 9};
-    const ordered_list_data: [10]u8 = .{'e', 'd', 'c', 'b', 'a', 'j', 'i', 'h', 'g', 'f'};
-    const list_keys: [10]u8 = .{4, 3, 2, 1, 0, 9, 8, 7, 6, 5};
-    const list_data: [10]u8 = .{'a', 'b', 'c', 'd', 'e', 'f', 'g', 'h', 'i', 'j'};
-    const cmp = CompareFns(u8) {
+    const ordered_list_keys: [10]u8 = .{ 0, 1, 2, 3, 4, 5, 6, 7, 8, 9 };
+    const ordered_list_data: [10]u8 = .{ 'e', 'd', 'c', 'b', 'a', 'j', 'i', 'h', 'g', 'f' };
+    const list_keys: [10]u8 = .{ 4, 3, 2, 1, 0, 9, 8, 7, 6, 5 };
+    const list_data: [10]u8 = .{ 'a', 'b', 'c', 'd', 'e', 'f', 'g', 'h', 'i', 'j' };
+    const cmp = CompareFns(u8){
         .isLessThan = u8isLessThan,
         .isEqual = u8isEqual,
         .isGreaterThan = u8isGreaterThan,
@@ -165,15 +166,15 @@ test "Cache Sensitive Skip List" {
     defer cssl.deinit();
 
     for (cssl.fastLanes) |lane, i| {
-        std.log.warn("lane {} | {any}", .{i, lane.items});
+        std.log.warn("lane {} | {any}", .{ i, lane.items });
     }
     for (cssl.proxies.items) |proxy, i| {
-        std.log.warn("proxy {} | keys: {any}", .{i, proxy.keys});
+        std.log.warn("proxy {} | keys: {any}", .{ i, proxy.keys });
     }
     var current: ?*SkipList.List.Node = cssl.list.head;
     var i: usize = 0;
     while (current) |curr| : (i += 1) {
-        std.log.warn("List node {} | {} {c}", .{i, curr.key, curr.value});
+        std.log.warn("List node {} | {} {c}", .{ i, curr.key, curr.value });
         current = curr.next;
     }
 
@@ -191,7 +192,7 @@ test "Cache Sensitive Skip List" {
         if (cssl.lookup(key)) |val| {
             try std.testing.expectEqual(val, ordered_list_data[idx]);
         } else {
-            std.log.warn("key {}, val {c}", .{key, ordered_list_data[idx]});
+            std.log.warn("key {}, val {c}", .{ key, ordered_list_data[idx] });
             return error.TestFailed;
         }
     }
