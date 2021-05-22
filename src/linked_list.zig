@@ -42,6 +42,13 @@ pub fn ListNode(comptime Key: type, comptime Value: type, isLessThan: fn (Key, K
                 current = next;
             }
         }
+
+        pub fn print(self: *@This()) void {
+            std.debug.warn("Key: {}, Next: {*}", .{
+                self.key,
+                self.next,
+            });
+        }
     };
 }
 

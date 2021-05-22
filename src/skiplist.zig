@@ -120,12 +120,15 @@ pub fn CSSL(comptime Key: type, comptime Value: type, cmp: CompareFns(Key), comp
         }
 
         pub fn lookup(self: *@This(), key: Key) ?Value {
+            if (self.list.len == 0) return null;
             var pos = binSearch: {
                 var array = self.fastLanes[levels - 1].items;
+                if (array.len == 1) break :binSearch 0;
                 var left: usize = 0;
                 var right: usize = array.len - 1;
                 while (left <= right) {
                     var middle = @divTrunc(left + right, 2);
+                    if (middle == 0) break :binSearch 0;
                     if (cmp.isLessThan(array[middle], key)) {
                         left = middle + 1;
                     } else if (cmp.isGreaterThan(array[middle], key)) {
@@ -168,12 +171,15 @@ pub fn CSSL(comptime Key: type, comptime Value: type, cmp: CompareFns(Key), comp
         }
 
         pub fn searchRange(self: *@This(), start: Key, end: Key) ?[2]*List.Node {
+            if (self.list.len == 0) return null;
             var pos = binSearch: {
                 var array = self.fastLanes[levels - 1].items;
+                if (array.len == 1) break :binSearch 0;
                 var left: usize = 0;
                 var right: usize = array.len - 1;
                 while (left <= right) {
                     var middle = @divTrunc(left + right, 2);
+                    if (middle == 0) break :binSearch 0;
                     if (cmp.isLessThan(array[middle], start)) {
                         left = middle + 1;
                     } else if (cmp.isGreaterThan(array[middle], start)) {
@@ -226,6 +232,8 @@ pub fn CSSL(comptime Key: type, comptime Value: type, cmp: CompareFns(Key), comp
                     pos -= 1;
                     break;
                 }
+            } else {
+                pos -= 1;
             }
             proxy = self.proxies.items[pos];
             var prev: usize = 0;
@@ -259,17 +267,36 @@ fn u8isGreaterThan(a: u8, b: u8) bool {
     return a > b;
 }
 
+const u8cmp = CompareFns(u8){
+    .isLessThan = u8isLessThan,
+    .isEqual = u8isEqual,
+    .isGreaterThan = u8isGreaterThan,
+};
+
+fn f32isLessThan(a: f32, b: f32) bool {
+    return a < b;
+}
+
+fn f32isGreaterThan(a: f32, b: f32) bool {
+    return a > b;
+}
+
+fn f32isEqual(a: f32, b: f32) bool {
+    return a == b;
+}
+
+pub const f32cmp = CompareFns(f32){
+    .isLessThan = f32isLessThan,
+    .isGreaterThan = f32isGreaterThan,
+    .isEqual = f32isEqual,
+};
+
 test "Cache Sensitive Skip List" {
     const ordered_list_keys: [10]u8 = .{ 0, 1, 2, 3, 4, 5, 6, 7, 8, 9 };
     const ordered_list_data: [10]u8 = .{ 'e', 'd', 'c', 'b', 'a', 'j', 'i', 'h', 'g', 'f' };
     const list_keys: [10]u8 = .{ 4, 3, 2, 1, 0, 9, 8, 7, 6, 5 };
     const list_data: [10]u8 = .{ 'a', 'b', 'c', 'd', 'e', 'f', 'g', 'h', 'i', 'j' };
-    const cmp = CompareFns(u8){
-        .isLessThan = u8isLessThan,
-        .isEqual = u8isEqual,
-        .isGreaterThan = u8isGreaterThan,
-    };
-    const SkipList = CSSL(u8, u8, cmp, 2, 2);
+    const SkipList = CSSL(u8, u8, u8cmp, 2, 2);
     var cssl = try SkipList.initFromSlices(std.testing.allocator, &list_keys, &list_data);
     defer cssl.deinit();
 
@@ -307,12 +334,7 @@ test "Cache Sensitive Skip List" {
 }
 
 test "Insert" {
-    const cmp = CompareFns(u8){
-        .isLessThan = u8isLessThan,
-        .isEqual = u8isEqual,
-        .isGreaterThan = u8isGreaterThan,
-    };
-    const SkipList = CSSL(u8, u8, cmp, 2, 2);
+    const SkipList = CSSL(u8, u8, u8cmp, 2, 2);
     var cssl = try SkipList.init(std.testing.allocator);
     defer cssl.deinit();
 
