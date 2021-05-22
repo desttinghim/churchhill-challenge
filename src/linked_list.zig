@@ -49,9 +49,19 @@ pub fn ListNode(comptime Key: type, comptime Value: type, isLessThan: fn (Key, K
 pub fn LinkedList(comptime Key: type, comptime Value: type, isLessThan: fn (Key, Key) bool) type {
     return struct {
         pub const Node = ListNode(Key, Value, isLessThan);
-        head: *Node,
-        tail: *Node,
+        head: ?*Node,
+        tail: ?*Node,
+        len: usize,
         allocator: *Allocator,
+
+        pub fn init(allocator: *Allocator) !@This() {
+            return @This(){
+                .head = null,
+                .tail = null,
+                .len = 0,
+                .allocator = allocator,
+            };
+        }
 
         /// Build a linked list from 2 slices, one of the keys and one of the values.
         /// These lists should be the same size, and both sorted in the same order.
@@ -62,6 +72,7 @@ pub fn LinkedList(comptime Key: type, comptime Value: type, isLessThan: fn (Key,
             var self = @This(){
                 .head = head,
                 .tail = head,
+                .len = 1,
                 .allocator = allocator,
             };
             for (keys[1..]) |key, i| {
@@ -81,13 +92,20 @@ pub fn LinkedList(comptime Key: type, comptime Value: type, isLessThan: fn (Key,
         pub fn insert(self: *@This(), key: Key, value: Value) !void {
             var allocator = self.allocator;
             var newNode = try Node.makeNode(allocator, key, value);
-            if (isLessThan(key, self.head.key)) {
-                newNode.next = self.head;
+            self.len += 1;
+            if (self.head == null) {
+                self.head = newNode;
+                self.tail = newNode;
+                return;
+            }
+            var head = self.head.?;
+            if (isLessThan(key, head.key)) {
+                newNode.next = head;
                 self.head = newNode;
                 return;
             }
-            var previous = self.head;
-            var current: ?*Node = self.head.next;
+            var previous = head;
+            var current: ?*Node = head.next;
             while (current) |curr| {
                 if (isLessThan(curr.key, key)) {
                     previous = curr;
@@ -99,6 +117,7 @@ pub fn LinkedList(comptime Key: type, comptime Value: type, isLessThan: fn (Key,
                 }
             } else {
                 previous.next = newNode;
+                self.tail = newNode;
                 return; // newNode;
             }
         }
