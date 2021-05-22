@@ -1,5 +1,5 @@
-const Point = @import("main.zig").Point;
-const Rect = @import("main.zig").Rect;
+const Point = @import("challenge.zig").Point;
+const Rect = @import("challenge.zig").Rect;
 
 pub const Test = struct {
     rect: Rect,

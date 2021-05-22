@@ -1,6 +1,10 @@
 const Builder = @import("std").build.Builder;
 const deps = @import("deps.zig");
 
+const Algorithm = enum {
+    cssl,
+};
+
 pub fn build(b: *Builder) void {
     const target = b.standardTargetOptions(.{
         .default_target = .{
@@ -24,7 +28,6 @@ pub fn build(b: *Builder) void {
     lib.setBuildMode(mode);
     lib.addPackagePath("tracy", "src/tracy_dummy.zig");
     lib.install();
-
     var main_tests = b.addTest("src/main.zig");
     main_tests.setBuildMode(mode);
     main_tests.setTarget(target);
@@ -46,4 +49,9 @@ pub fn build(b: *Builder) void {
         exe.addPackagePath("tracy", "src/tracy_dummy.zig");
         main_tests.addPackagePath("tracy", "src/tracy_dummy.zig");
     }
+
+    _ = b.option(Algorithm, "algorithm", "Choose which algorithm to build");
+    exe.addBuildOption(Algorithm, "algorithm", .cssl);
+    lib.addBuildOption(Algorithm, "algorithm", .cssl);
+    main_tests.addBuildOption(Algorithm, "algorithm", .cssl);
 }

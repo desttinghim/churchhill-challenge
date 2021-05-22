@@ -348,12 +348,3 @@ test "Insert" {
     try std.testing.expectEqual(cssl.lookup(3), 'd');
 }
 
-// test "Skip List in Skip List" {
-//     const cmp = CompareFns(u8){
-//         .isLessThan = u8isLessThan,
-//         .isEqual = u8isEqual,
-//         .isGreaterThan = u8isGreaterThan,
-//     };
-//     const SkipListY = CSSL(u8, u8, cmp, 2, 2);
-//     const SkipListX = CSSL(u8, SkipListY, cmp, 2, 2);
-// }
